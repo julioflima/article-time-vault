@@ -1,46 +1,54 @@
 flowchart TD
     F["📄 Arquivo F"] --> enc
-    T["⏱️ Tempo alvo T (anos)"] --> diff
+    T["⏱️ Tempo alvo T<br>(anos)"] --> diff
     t0["📅 Ano de criação t₀"] --> diff
 
-    diff["Passo 1: Calcular dificuldade
-    n = B(t₀, $1M) + ⌊log₂(T × 365)⌋"]
+    diff["Passo 1: Calcular dificuldade<br>n = B(t₀, $1M) + ⌊log₂(T × 365)⌋"]
 
-    diff --> seed["Passo 2: Gerar semente
-    S ← {0,1}ⁿ"]
+    diff --> seed["Passo 2: Gerar semente<br>S ← {0,1}ⁿ"]
 
-    seed --> hkdf["Passo 3: Derivar chave
-    K ← HKDF-SHA256(S)"]
+    seed --> hash["Passo 3: Verificação<br>V ← HMAC-SHA256(S, n)"]
 
-    hkdf --> enc["Passo 4: Encriptar
-    C ← AES-256-GCM(K, F)"]
+    hash --> key["Passo 4: Derivar chave<br>K ← HMAC-SHA256(S, V)"]
 
-    enc --> pub["Passo 5: Publicar
-    (C, n)"]
+    key --> enc["Passo 5: Encriptar<br>C ← AES-256-GCM(K, F)"]
+
+    enc --> pub["Passo 6: Publicar<br>(C, n, V)"]
 
     pub --> atk
 
-    subgraph Quebra
-        atk["Atacante testa S' ∈ {0,1}ⁿ"]
-        atk --> derive["K' ← HKDF-SHA256(S')"]
-        derive --> dec["F' ← AES-256-GCM.Dec(K', C)"]
-        dec --> check{"Tag GCM
-        válido?"}
+    subgraph "&nbsp;&nbsp;"
+        atk["Atacante testa<br>S' ∈ {0,1}ⁿ"]
+        atk --> hashcheck["HMAC-SHA256(S', n) =? V"]
+        hashcheck --> check{"Hash<br>válido?"}
         check -->|Não| atk
-        check -->|Sim| ok["✅ F' = F
-        Arquivo revelado"]
     end
+
+    check -->|Sim| found["✅ S' é a solução"]
+
+    found --> deriveK
+
+    subgraph "&nbsp;"
+        deriveK["K ← HMAC-SHA256(S', V)"]
+        deriveK --> decfile["F ← AES-256-GCM.Dec(K, C)"]
+    end
+
+    decfile --> result["📄 Arquivo revelado"]
 
     style F fill:#4a9eff,stroke:#2d7ad4,color:#fff
     style T fill:#ff9f43,stroke:#d48a2d,color:#fff
     style t0 fill:#ff9f43,stroke:#d48a2d,color:#fff
     style diff fill:#a55eea,stroke:#8044c4,color:#fff
     style seed fill:#a55eea,stroke:#8044c4,color:#fff
-    style hkdf fill:#a55eea,stroke:#8044c4,color:#fff
+    style hash fill:#a55eea,stroke:#8044c4,color:#fff
+    style key fill:#a55eea,stroke:#8044c4,color:#fff
     style enc fill:#a55eea,stroke:#8044c4,color:#fff
     style pub fill:#26de81,stroke:#1ba85e,color:#fff
     style atk fill:#fc5c65,stroke:#c44040,color:#fff
-    style derive fill:#fc5c65,stroke:#c44040,color:#fff
-    style dec fill:#fc5c65,stroke:#c44040,color:#fff
+    style hashcheck fill:#fc5c65,stroke:#c44040,color:#fff
     style check fill:#fed330,stroke:#d4b320,color:#333
-    style ok fill:#26de81,stroke:#1ba85e,color:#fff
+    style found fill:#26de81,stroke:#1ba85e,color:#fff
+    style deriveK fill:#45aaf2,stroke:#2d7ad4,color:#fff
+    style decfile fill:#45aaf2,stroke:#2d7ad4,color:#fff
+    style result fill:#26de81,stroke:#1ba85e,color:#fff
+    style atk2 fill:transparent,stroke:transparent,color:transparent

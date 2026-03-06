@@ -4,7 +4,7 @@
 
 ### Visão Geral
 
-Um arquivo $F$ é encriptado com AES-256-GCM usando uma chave $K$ derivada de uma **semente curta** $S$ de $n$ bits. O puzzle é a própria encriptação: quem encontrar $S$ por busca exaustiva obtém $K$ e decripta o arquivo. O **authentication tag do GCM** funciona como oráculo de verificação — é ele que confirma se o candidato está correto. O parâmetro de entrada é **quanto tempo se deseja que o arquivo permaneça protegido** — e o protocolo retorna **o custo em dólares para quebrar hoje em 1 dia**.
+Um arquivo $F$ é encriptado com AES-256-GCM usando uma chave $K$ derivada via HMAC-SHA256 de uma **semente curta** $S$ de $n$ bits. Um hash $V = \text{HMAC-SHA256}(S,\ n)$ é publicado como **compromisso de verificação** — qualquer um pode testar candidatos contra $V$ sem precisar do arquivo. A chave é derivada encadeando: $K = \text{HMAC-SHA256}(S,\ V)$. Um único protocolo (HMAC-SHA256) para tudo.
 
 ---
 
@@ -43,18 +43,30 @@ $$S \xleftarrow{\$} \{0,1\}^n$$
 | $\xleftarrow{\$}$ | Amostragem uniforme aleatória (o cifrão indica aleatoriedade criptográfica) |
 | $\{0,1\}^n$ | Conjunto de todas as strings binárias de comprimento $n$ |
 
-**Passo 3 — Derivar a chave completa:**
+**Passo 3 — Hash de verificação:**
 
-$$K \leftarrow \text{HKDF-SHA256}(S)$$
+$$V \leftarrow \text{HMAC-SHA256}(S,\ n)$$
 
 | Parte | Significado |
 |-------|-------------|
-| $K$ | **Key** — chave AES de 256 bits derivada de $S$ |
-| $\leftarrow$ | Atribuição determinística (sem aleatoriedade adicional) |
-| $\text{HKDF}$ | **HMAC-based Key Derivation Function** — expande entrada curta em chave longa |
-| $\text{SHA256}$ | Função hash usada internamente pelo HKDF |
+| $V$ | **Verification hash** — compromisso público de $S$; permite verificar sem o arquivo |
+| $\text{HMAC-SHA256}$ | Código de autenticação baseado em hash — RFC 2104 |
+| $S$ | Chave do HMAC (o segredo) |
+| $n$ | Mensagem do HMAC (parâmetro público) |
 
-**Passo 4 — Encriptar o arquivo:**
+**Passo 4 — Derivar a chave:**
+
+$$K \leftarrow \text{HMAC-SHA256}(S,\ V)$$
+
+| Parte | Significado |
+|-------|-------------|
+| $K$ | **Key** — chave AES de 256 bits derivada do encadeamento $S \to V \to K$ |
+| $S$ | Chave do HMAC (mesmo segredo) |
+| $V$ | Mensagem do HMAC (output do passo anterior) |
+
+> Mesmo protocolo do Passo 3, com mensagem diferente. $V$ alimenta $K$ — encadeamento natural.
+
+**Passo 5 — Encriptar o arquivo:**
 
 $$C \leftarrow \text{AES-256-GCM}(K,\ F)$$
 
@@ -65,24 +77,33 @@ $$C \leftarrow \text{AES-256-GCM}(K,\ F)$$
 | $256$ | Tamanho da chave em bits |
 | $\text{GCM}$ | **Galois/Counter Mode** — encriptação autenticada (confidencialidade + integridade) |
 
-**Passo 5 — Publicar:**
+**Passo 6 — Publicar:**
 
-$$(C,\ n)$$
+$$(C,\ n,\ V)$$
 
 | Parte | Significado |
 |-------|-------------|
 | $C$ | Ciphertext (contém o tag GCM embutido) |
 | $n$ | Número de bits da semente — informa o espaço de busca |
+| $V$ | Hash de verificação — permite testar candidatos sem decriptar |
 
 ---
 
 ### Como o Atacante Quebra
 
-$$\forall\ S' \in \{0,1\}^n: \quad K' \leftarrow \text{HKDF-SHA256}(S'),\quad F' \leftarrow \text{AES-256-GCM.Dec}(K',\ C)$$
+**Fase 1 — Busca (rápida, sem o arquivo):**
 
-Se o **tag GCM validar** → $S'$ é a semente correta e $F' = F$. Caso contrário, próximo candidato.
+$$\forall\ S' \in \{0,1\}^n: \quad \text{HMAC-SHA256}(S',\ n) \stackrel{?}{=} V$$
 
-Custo esperado: $2^n$ tentativas. Cada tentativa é independente — **busca puramente paralela**.
+Cada teste é um único HMAC-SHA256.
+
+**Fase 2 — Decriptação (uma única vez, quando encontrar $S'$):**
+
+$$V \leftarrow \text{HMAC-SHA256}(S',\ n)$$
+$$K \leftarrow \text{HMAC-SHA256}(S',\ V)$$
+$$F \leftarrow \text{AES-256-GCM.Dec}(K,\ C)$$
+
+Custo esperado: $2^n$ avaliações de HMAC-SHA256. Cada tentativa é independente — **busca puramente paralela**.
 
 ---
 
@@ -109,9 +130,10 @@ $$\boxed{ \text{Custo}(T,\ t_0) = \$1\text{M} \times T \times 365 }$$
 
 ### Propriedades do Protocolo
 
-- **O puzzle é a própria encriptação** — não há camada separada; o tag GCM substitui o compromisso público
+- **Verificação sem o arquivo** — $V$ permite provar que $S'$ é a solução sem precisar de $C$
+- **Um único protocolo** — HMAC-SHA256 para verificação e derivação de chave
 - **Não há custódio** — nenhum terceiro guarda $S$; ele existe apenas como espaço de busca
-- **Verificável publicamente** — qualquer um com $C$ pode confirmar que um $S'$ é a solução
+- **Verificável publicamente** — qualquer um com $V$ pode confirmar que um $S'$ é a solução
 - **Custo previsível** — a tabela $\mathcal{B}$ permite estimar o custo de quebra em qualquer ano futuro
 - **Degradação natural** — à medida que hardware evolui, o custo de quebra cai; isso é **intencional** e quantificável
 - **Busca puramente paralela** — cada tentativa é independente; escala linearmente com hardware
@@ -130,7 +152,7 @@ Comparar poder computacional ao longo do tempo exige uma tarefa de referência q
 2. **Sem atalhos algorítmicos** — não melhorável por criptoanalise
 3. **Paralelizável linearmente** — dobrando hardware, dobra o progresso
 
-A busca exaustiva sobre HKDF-SHA256 + AES-256-GCM satisfaz essas propriedades: cada candidato exige uma derivação HKDF e uma tentativa de decriptação GCM, sem atalho possível.
+A busca exaustiva sobre HMAC-SHA256 satisfaz essas propriedades: cada candidato exige uma avaliação de HMAC, sem atalho possível.
 
 ---
 
@@ -140,12 +162,36 @@ Seja:
 
 - $t$ — ano de referência
 - $D$ — orçamento em dólares
-- $P(t, D)$ — número total de tentativas (HKDF + AES-GCM-Dec) executáveis com orçamento $D$ no ano $t$, rodando por 1 ano contínuo
+- $P(t, D)$ — número total de tentativas (HMAC-SHA256) executáveis com orçamento $D$ no ano $t$, rodando por 1 ano contínuo
 - $\mathcal{B}(t, D)$ — maior $n$ tal que $2^n \leq P(t, D)$
 
 $$\mathcal{B}(t, D) = \lfloor \log_2 P(t, D) \rfloor$$
 
 **Interpretação:** $\mathcal{B}(t, D)$ é o número máximo de bits de semente que o orçamento $D$ no ano $t$ consegue buscar exaustivamente em 1 ano.
+
+---
+
+### Aproximação Contínua de $\mathcal{B}$
+
+A tabela histórica (1965–2025) é discreta. Para uso programático e extrapolação, aproximamos $\mathcal{B}(t, \$1\text{M})$ por uma **função logística** ajustada por mínimos quadrados:
+
+$$\boxed{ \mathcal{B}(t) = \frac{L}{1 + e^{-k(t - t_{\text{mid}})}} + b }$$
+
+| Parâmetro | Valor | Significado |
+|-----------|-------|-------------|
+| $L$ | $74{,}89$ | Amplitude da curva (range em bits) |
+| $k$ | $0{,}0553$ | Taxa de crescimento |
+| $t_{\text{mid}}$ | $2004{,}5$ | Ponto de inflexão (metade do crescimento) |
+| $b$ | $25{,}31$ | Offset base (bits mínimos) |
+
+**Propriedades da aproximação:**
+
+- **MSE = 5,12** contra os 17 pontos da tabela histórica (erro médio $\approx \pm 2{,}3$ bits)
+- **Assíntota superior:** $L + b \approx 100$ bits — limite natural do hardware acessível com $\$1\text{M}$
+- **Assíntota inferior:** $b \approx 25$ bits — capacidade mínima mesmo em hardware primitivo
+- **Ponto de inflexão:** $t_{\text{mid}} = 2004{,}5$ — metade do crescimento ocorreu antes de 2005
+
+> A curva logística captura a forma de S dos dados: crescimento lento (1960s–80s), aceleração (1990s–2010s), e desaceleração (2020s+). A alternativa logarítmica pura ($a \ln(t) + b$) tem MSE = 49,89 — quase 10× pior.
 
 ---
 
