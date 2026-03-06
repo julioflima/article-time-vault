@@ -1,0 +1,46 @@
+flowchart TD
+    F["📄 Arquivo F"] --> enc
+    T["⏱️ Tempo alvo T (anos)"] --> diff
+    t0["📅 Ano de criação t₀"] --> diff
+
+    diff["Passo 1: Calcular dificuldade
+    n = B(t₀, $1M) + ⌊log₂(T × 365)⌋"]
+    
+    diff --> seed["Passo 2: Gerar semente
+    S ← {0,1}ⁿ"]
+    
+    seed --> hkdf["Passo 3: Derivar chave
+    K ← HKDF-SHA256(S, salt, info)"]
+    
+    hkdf --> enc["Passo 4: Encriptar
+    C ← AES-256-GCM(K, F)"]
+    
+    enc --> pub["Passo 5: Publicar
+    (C, n, salt, info)"]
+
+    pub --> atk
+
+    subgraph Quebra
+        atk["Atacante testa S' ∈ {0,1}ⁿ"]
+        atk --> derive["K' ← HKDF-SHA256(S', salt, info)"]
+        derive --> dec["F' ← AES-256-GCM.Dec(K', C)"]
+        dec --> check{"Tag GCM
+        válido?"}
+        check -->|Não| atk
+        check -->|Sim| ok["✅ F' = F
+        Arquivo revelado"]
+    end
+
+    style F fill:#4a9eff,stroke:#2d7ad4,color:#fff
+    style T fill:#ff9f43,stroke:#d48a2d,color:#fff
+    style t0 fill:#ff9f43,stroke:#d48a2d,color:#fff
+    style diff fill:#a55eea,stroke:#8044c4,color:#fff
+    style seed fill:#a55eea,stroke:#8044c4,color:#fff
+    style hkdf fill:#a55eea,stroke:#8044c4,color:#fff
+    style enc fill:#a55eea,stroke:#8044c4,color:#fff
+    style pub fill:#26de81,stroke:#1ba85e,color:#fff
+    style atk fill:#fc5c65,stroke:#c44040,color:#fff
+    style derive fill:#fc5c65,stroke:#c44040,color:#fff
+    style dec fill:#fc5c65,stroke:#c44040,color:#fff
+    style check fill:#fed330,stroke:#d4b320,color:#333
+    style ok fill:#26de81,stroke:#1ba85e,color:#fff

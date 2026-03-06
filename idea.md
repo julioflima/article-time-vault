@@ -4,45 +4,85 @@
 
 ### Visão Geral
 
-Um arquivo é encriptado com uma chave $K$. O comprometimento público de $K$ é postado de forma análoga a uma carteira Bitcoin — qualquer um pode ver o compromisso, mas revelar $K$ exige resolver um problema de segunda pré-imagem com dificuldade calibrada. O parâmetro de entrada é **quanto tempo levaria para quebrar com hardware atual** — e o protocolo retorna **o custo em dólares para quebrar hoje em 1 dia**.
+Um arquivo $F$ é encriptado com AES-256-GCM usando uma chave $K$ derivada de uma **semente curta** $S$ de $n$ bits. O puzzle é a própria encriptação: quem encontrar $S$ por busca exaustiva obtém $K$ e decripta o arquivo. O **authentication tag do GCM** funciona como oráculo de verificação — é ele que confirma se o candidato está correto. O parâmetro de entrada é **quanto tempo se deseja que o arquivo permaneça protegido** — e o protocolo retorna **o custo em dólares para quebrar hoje em 1 dia**.
 
 ---
 
 ### Parâmetros de Entrada
 
-| Símbolo | Descrição |
-|---------|-----------|
-| $F$ | Arquivo original |
-| $T$ | Tempo alvo para quebra com $\$1\text{M}$ de hardware (em anos) |
-| $t_0$ | Ano de criação do puzzle |
+| Símbolo | Tipo | Descrição |
+|---------|------|-----------|
+| $F$ | $\{0,1\}^*$ | **File** — arquivo original em bytes |
+| $T$ | $\mathbb{R}^+$ | **Time** — tempo alvo em anos |
+| $t_0$ | $\mathbb{N}$ | **Time zero** — ano de criação do puzzle |
 
 ---
 
 ### Construção do Puzzle
 
-**Passo 1 — Gerar a chave:**
-
-$$K \xleftarrow{\$} \{0,1\}^{256}$$
-
-**Passo 2 — Encriptar o arquivo:**
-
-$$C \leftarrow \text{AES-256-GCM}(K, F)$$
-
-**Passo 3 — Calcular a dificuldade:**
-
-Com base na tabela $\mathcal{B}(t_0, \$1\text{M})$ e no tempo alvo $T$:
+**Passo 1 — Calcular a dificuldade:**
 
 $$n = \mathcal{B}(t_0,\ \$1\text{M}) + \lfloor \log_2(T \times 365) \rfloor$$
 
+| Parte | Significado |
+|-------|-------------|
+| $n$ | Tamanho da semente em bits — define a dificuldade do puzzle |
+| $\mathcal{B}(t_0, \$1\text{M})$ | Bits que $\$1\text{M}$ de hardware compra em $t_0$ rodando por 1 ano |
+| $T \times 365$ | Converte anos em dias — fator de escala temporal |
+| $\lfloor \log_2(\cdot) \rfloor$ | Converte o fator multiplicativo em bits adicionais |
+
 > Intuição: $\mathcal{B}$ define quantos bits $\$1\text{M}$/ano alcança hoje. Cada ano extra exige 365× mais trabalho, ou seja, $\approx 8{,}5$ bits a mais.
 
-**Passo 4 — Compromisso público (à la Bitcoin):**
+**Passo 2 — Gerar a semente:**
 
-$$\text{addr} = \text{Argon2id}(K,\ \text{salt},\ n\text{-bits de dificuldade})$$
+$$S \xleftarrow{\$} \{0,1\}^n$$
 
-Publicar o par $(\text{addr},\ C)$ — análogo a uma carteira Bitcoin onde `addr` é público mas $K$ é o segredo.
+| Parte | Significado |
+|-------|-------------|
+| $S$ | **Seed** — semente aleatória de $n$ bits; é o segredo do puzzle |
+| $\xleftarrow{\$}$ | Amostragem uniforme aleatória (o cifrão indica aleatoriedade criptográfica) |
+| $\{0,1\}^n$ | Conjunto de todas as strings binárias de comprimento $n$ |
 
-Quem encontrar $K'$ tal que $\text{Argon2id}(K') = \text{addr}$ obtém a chave e decripta $C$.
+**Passo 3 — Derivar a chave completa:**
+
+$$K \leftarrow \text{HKDF-SHA256}(S)$$
+
+| Parte | Significado |
+|-------|-------------|
+| $K$ | **Key** — chave AES de 256 bits derivada de $S$ |
+| $\leftarrow$ | Atribuição determinística (sem aleatoriedade adicional) |
+| $\text{HKDF}$ | **HMAC-based Key Derivation Function** — expande entrada curta em chave longa |
+| $\text{SHA256}$ | Função hash usada internamente pelo HKDF |
+
+**Passo 4 — Encriptar o arquivo:**
+
+$$C \leftarrow \text{AES-256-GCM}(K,\ F)$$
+
+| Parte | Significado |
+|-------|-------------|
+| $C$ | **Ciphertext** — arquivo encriptado + authentication tag GCM |
+| $\text{AES}$ | **Advanced Encryption Standard** — cifra de bloco simétrica |
+| $256$ | Tamanho da chave em bits |
+| $\text{GCM}$ | **Galois/Counter Mode** — encriptação autenticada (confidencialidade + integridade) |
+
+**Passo 5 — Publicar:**
+
+$$(C,\ n)$$
+
+| Parte | Significado |
+|-------|-------------|
+| $C$ | Ciphertext (contém o tag GCM embutido) |
+| $n$ | Número de bits da semente — informa o espaço de busca |
+
+---
+
+### Como o Atacante Quebra
+
+$$\forall\ S' \in \{0,1\}^n: \quad K' \leftarrow \text{HKDF-SHA256}(S'),\quad F' \leftarrow \text{AES-256-GCM.Dec}(K',\ C)$$
+
+Se o **tag GCM validar** → $S'$ é a semente correta e $F' = F$. Caso contrário, próximo candidato.
+
+Custo esperado: $2^n$ tentativas. Cada tentativa é independente — **busca puramente paralela**.
 
 ---
 
@@ -67,30 +107,18 @@ $$\boxed{ \text{Custo}(T,\ t_0) = \$1\text{M} \times T \times 365 }$$
 
 ---
 
-### É possível o endereço público à la Bitcoin?
+### Propriedades do Protocolo
 
-**Sim, e é exatamente o que o protocolo faz.** A analogia é direta:
-
-| Bitcoin | Este protocolo |
-|---------|---------------|
-| Chave privada $sk$ | Chave de encriptação $K$ |
-| Endereço público $H(pk)$ | Compromisso $\text{Argon2id}(K)$ |
-| Transação na blockchain | Par $(\text{addr}, C)$ publicado |
-| Gastar = provar posse de $sk$ | Decriptar = provar posse de $K$ |
-| Segurança: ECDLP | Segurança: segunda pré-imagem |
-
-A diferença chave: em Bitcoin o endereço **nunca deve ser quebrado**. Aqui, o endereço **é projetado para ser quebrado** — mas somente após o custo computacional justificar o prazo desejado.
+- **O puzzle é a própria encriptação** — não há camada separada; o tag GCM substitui o compromisso público
+- **Não há custódio** — nenhum terceiro guarda $S$; ele existe apenas como espaço de busca
+- **Verificável publicamente** — qualquer um com $C$ pode confirmar que um $S'$ é a solução
+- **Custo previsível** — a tabela $\mathcal{B}$ permite estimar o custo de quebra em qualquer ano futuro
+- **Degradação natural** — à medida que hardware evolui, o custo de quebra cai; isso é **intencional** e quantificável
+- **Busca puramente paralela** — cada tentativa é independente; escala linearmente com hardware
 
 ---
 
-### Propriedades do Protocolo
-
-- **Não há custódio** — nenhum terceiro guarda $K$; ele está implícito no puzzle
-- **Verificável publicamente** — qualquer um pode confirmar que $C$ foi encriptado com a $K$ que resolve o puzzle
-- **Custo previsível** — a tabela $\mathcal{B}$ permite estimar o custo de quebra em qualquer ano futuro
-- **Degradação natural** — à medida que hardware evolui, o custo de quebra cai; isso é **intencional** e quantificável
-
-## Benchmark de Poder Computacional por Segunda Pré-Imagem
+## Benchmark de Poder Computacional por Busca Exaustiva
 
 ---
 
@@ -99,21 +127,10 @@ A diferença chave: em Bitcoin o endereço **nunca deve ser quebrado**. Aqui, o 
 Comparar poder computacional ao longo do tempo exige uma tarefa de referência que seja:
 
 1. **Computacionalmente mensurável** — custo teórico bem definido
-2. **Hardware-neutra** — sem vantagem para hardware especializado
-3. **Sem atalhos algorítmicos** — não melhorável por criptoanalise
-4. **Paralelizável linearmente** — dobrando hardware, dobra o progresso
+2. **Sem atalhos algorítmicos** — não melhorável por criptoanalise
+3. **Paralelizável linearmente** — dobrando hardware, dobra o progresso
 
-A segunda pré-imagem satisfaz todas essas propriedades.
-
----
-
-### Definição Formal
-
-**Problema:** Dado $m$ tal que $H(m) = d$, encontrar $m' \neq m$ com $H(m') = d$.
-
-**Custo esperado:** $2^n$ avaliações de $H$, onde $n$ é o tamanho do digest em bits.
-
-**Sem atalho conhecido:** diferente de colisão ($2^{n/2}$ por birthday attack), segunda pré-imagem não possui redução abaixo de $2^n$ para funções hash ideais.
+A busca exaustiva sobre HKDF-SHA256 + AES-256-GCM satisfaz essas propriedades: cada candidato exige uma derivação HKDF e uma tentativa de decriptação GCM, sem atalho possível.
 
 ---
 
@@ -123,30 +140,12 @@ Seja:
 
 - $t$ — ano de referência
 - $D$ — orçamento em dólares
-- $P(t, D)$ — número total de avaliações de $H$ executáveis com orçamento $D$ no ano $t$, rodando por 1 ano contínuo
+- $P(t, D)$ — número total de tentativas (HKDF + AES-GCM-Dec) executáveis com orçamento $D$ no ano $t$, rodando por 1 ano contínuo
 - $\mathcal{B}(t, D)$ — maior $n$ tal que $2^n \leq P(t, D)$
 
 $$\mathcal{B}(t, D) = \lfloor \log_2 P(t, D) \rfloor$$
 
-**Interpretação:** $\mathcal{B}(t, D)$ é o número máximo de bits de segunda pré-imagem que o orçamento $D$ no ano $t$ consegue quebrar em 1 ano.
-
----
-
-### Condição de Hardware-Neutralidade
-
-Para que o benchmark seja válido, $H$ deve ser escolhida tal que:
-
-$$\frac{\text{H/s (ASIC)}}{\text{H/s (CPU/GPU commodity)}} \approx 1$$
-
-Isso exclui **SHA-256** (ASICs Bitcoin são $\sim 10^4\times$ mais eficientes que GPU) e favorece funções **memory-hard** como:
-
-| Função | Razão ASIC/GPU | Adequação |
-|--------|---------------|-----------|
-| SHA-256 | ~10.000× | ✗ inválida |
-| SHA-3 (Keccak) | ~10× | ✗ marginalmente |
-| Argon2 | ~1,2× | ✓ ideal |
-| scrypt | ~2× | ✓ aceitável |
-| BLAKE3 | ~5× | ~ aceitável |
+**Interpretação:** $\mathcal{B}(t, D)$ é o número máximo de bits de semente que o orçamento $D$ no ano $t$ consegue buscar exaustivamente em 1 ano.
 
 ---
 
@@ -174,9 +173,8 @@ $$C(1980 \to 2025) = \$1\text{M} \cdot 2^{40-81} = \$1\text{M} \cdot 2^{-41} \ap
 
 ### Aplicações
 
-- **Parametrização de esquemas criptográficos:** definir $n$ de uma função hash baseado no ano de implantação e vida útil esperada do sistema
-- **Proof-of-work justo:** substituir SHA-256 por função memory-hard torna mineração resistente a ASICs e o benchmark aplicável diretamente
-- **Protocolo de revelação temporizada:** como discutido anteriormente — o prazo é expresso em bits de $\mathcal{B}$, não em tempo absoluto, tornando-o robusto a avanços de hardware
+- **Parametrização de esquemas criptográficos:** definir $n$ baseado no ano de implantação e vida útil esperada do sistema
+- **Protocolo de revelação temporizada:** o prazo é expresso em bits de $\mathcal{B}$, não em tempo absoluto, tornando-o robusto a avanços de hardware
 
 
 
