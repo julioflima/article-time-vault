@@ -75,10 +75,10 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
 
 ## Phase 4: GitHub Storage (`time-vault-secrets`)
 
-10. **Storage structure (GitHub repo as database)** — Separate public repo `time-vault-secrets` acts as a flat-file database. Each vault is stored as `{V_hex}.vault.json` containing `{ "C", "n", "t0", "T" }`. V (the public verification value) is the filename — guarantees uniqueness and enables lookup by V.
+10. **Storage structure (GitHub repo as database)** — Separate public repo `time-vault-secrets` acts as a flat-file database. Each vault is stored as `{V_hex}` containing `{ "C", "n", "t0", "T" }`. V (the public verification value) is the filename — guarantees uniqueness and enables lookup by V.
 
 11. **Write via GitHub API** (TypeScript, `src/lib/github.ts`) — A **public fine-grained PAT** is hardcoded in the client with `Contents:write` scope on `time-vault-secrets` only. Anyone can add vault files — this is intentional (the repo is an append-only public database). Deletion is prevented via GitHub branch protection rules (require PR for deletion, restrict force-push). On "Proceed" after encryption:
-    - `PUT /repos/{owner}/time-vault-secrets/contents/{V_hex}.vault.json` with Base64-encoded JSON body
+    - `PUT /repos/{owner}/time-vault-secrets/contents/{V_hex}` with Base64-encoded JSON body
     - Commit message: `"vault: {V_hex_short} | n={n} | unlock={T}"`
     - If the file already exists (409 conflict), the vault V is a duplicate — show error
 
@@ -178,10 +178,20 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
 
 ---
 
-## Further Considerations
+## Resolved Decisions
 
-1. **PyScript loading UX** — Pyodide takes 3-10s to initialize. Show loading spinner ("Initializing cryptographic engine..."), disable buttons until ready. Which option do you prefer — **Option A** (use `cryptography` package, slower load but simpler code) or **Option B** (SubtleCrypto bridge, faster load)?
+1. **PyScript loading UX** — Using **Option A** (`cryptography` in Pyodide). Slower first load (~17MB) but simpler code, zero bridge bugs, same algorithm as CLI. Show loading spinner ("Initializing cryptographic engine..."), disable buttons until ready. All cached after first visit.
 
-2. **GitHub token (public, append-only)** — The PAT is public and hardcoded in the client. It can only create/update files in `time-vault-secrets` — it cannot delete files, force-push, or access other repos. Branch protection rules on `time-vault-secrets` enforce append-only behavior (no deletion, no force-push). If the token is revoked/rotated, update the hardcoded value and redeploy.
+2. **GitHub token (public, append-only)** — The PAT is public and hardcoded in the client. It can only create/update files in `time-vault-secrets` — it cannot delete files, force-push, or access other repos. Branch protection rules on `time-vault-secrets` enforce append-only behavior (no deletion, no force-push). If the token is revoked/rotated, update the hardcoded value and redeploy. No user login or token input — zero friction.
 
-3. **Bitcoin address standard** — **P2WSH** (SegWit, starts with `bc1q`) for the hashlock bounty. Forces the cracker to reveal S on-chain when spending. Combined with OP_RETURN storing V in the funding tx for full on-chain correlation.
+3. **Bitcoin address standard** — **P2WSH** (SegWit) for the hashlock bounty. Uses script `OP_SHA256 <SHA256(S)> OP_EQUAL` which forces the cracker to reveal S on-chain when spending. Combined with OP_RETURN in the same funding transaction for full on-chain correlation.
+
+4. **OP_RETURN format** — All ASCII, single clickable URL: `https://julioflima.github.io/timevault/v/{V_hex}?n={n}`. Block explorers auto-linkify it. `t0` is derived from the block timestamp (free, no need to store). Since Bitcoin Core v30 (Oct 2025), OP_RETURN supports up to ~100KB — the ~111 byte URL fits easily. The URL prefix `julioflima.github.io/timevault` acts as both protocol identifier and direct link.
+
+5. **Satoshi's wallets as precedent** — The article references Satoshi Nakamoto's ~1.1M BTC held in P2PK (Pay-to-Public-Key) addresses, identified by researcher Sergio Lerner via the "Patoshi Pattern" (extraNonce fingerprinting in blocks 1–36,000). These addresses expose the raw public key on-chain, making them vulnerable to quantum attacks via Shor's algorithm. Bitcoin developers proposed BIP-360 (quantum-resistant address migration). Time Vault makes this same pattern intentional and quantifiable: encryption that is secure today but will eventually be breakable as hardware improves.
+
+6. **On-chain data lifecycle** — A vault's complete lifecycle is recorded on the Bitcoin blockchain:
+   - **Funding tx**: Output 0 = P2WSH hashlock bounty (locked by `SHA256(S)`), Output 1 = OP_RETURN with clickable URL containing V and n. `t0` comes from the block timestamp.
+   - **Spending tx**: Witness data reveals S. Anyone can verify `HMAC-SHA256(S, n) == V`. The vault is publicly and permanently "cracked."
+   - **Minimum cost**: ~550 sats (~$0.55) — 330 sats bounty (P2WSH dust limit) + ~220 sats fee.
+   - **The blockchain becomes a proof-of-crack ledger**: vault exists (V in OP_RETURN) → bounty locked (P2WSH) → vault broken (S in witness).

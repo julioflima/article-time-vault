@@ -226,6 +226,153 @@ $$C(1980 \to 2025) = \$1\text{M} \cdot 2^{48-67} = \$1\text{M} \cdot 2^{-19} \ap
 - **Parametrização de esquemas criptográficos:** definir $n$ baseado no ano de implantação e vida útil esperada do sistema
 - **Protocolo de revelação temporizada:** o prazo é expresso em bits de $\mathcal{B}$, não em tempo absoluto, tornando-o robusto a avanços de hardware
 
+---
+
+## Integração com Bitcoin — Bounty On-Chain e Prova de Quebra
+
+---
+
+### Bitcoin é um Time Vault
+
+Toda carteira Bitcoin é, na essência, um time vault: um segredo criptográfico (chave privada) protegido pela dificuldade computacional de reverter curvas elípticas (ECDSA/secp256k1). Enquanto o hardware atual não consegue derivar a chave privada a partir da chave pública, avanços em computação quântica (algoritmo de Shor) ou clássica poderão eventualmente quebrar essa proteção.
+
+**Precedente histórico: as carteiras de Satoshi Nakamoto.** Satoshi minerou ~1,1 milhão de BTC entre 2009–2010 usando endereços **P2PK (Pay-to-Public-Key)** — o formato mais antigo do Bitcoin, onde a **chave pública está exposta diretamente** no script de saída da transação. Diferente dos formatos modernos (P2PKH, P2WPKH), que publicam apenas um *hash* da chave pública, os endereços P2PK revelam o blueprint completo para um ataque.
+
+**Implicação:** ~1,72 milhão de BTC em endereços P2PK antigos (incluindo os de Satoshi) estão vulneráveis a um ataque quântico. Quem construir um computador quântico suficientemente poderoso pode:
+1. Colher as chaves públicas expostas do blockchain (são públicas)
+2. Executar o algoritmo de Shor para derivar as chaves privadas
+3. Transferir os fundos
+
+O protocolo Time Vault torna esse padrão **intencional e quantificável**: encriptação que é segura hoje mas será quebrável no futuro, com custo previsível via $\mathcal{B}$.
+
+---
+
+### Armazenamento do Vault — GitHub como Banco de Dados
+
+O ciphertext $C$ e os metadados públicos são armazenados em um repositório GitHub público (`time-vault-secrets`), que funciona como um banco de dados flat-file de append-only. Cada vault é salvo como um arquivo JSON nomeado pelo hash de verificação:
+
+$$\texttt{\{V\_hex\}.json} = \{ C,\ n,\ t_0,\ T \}$$
+
+| Campo | Descrição |
+|-------|-----------|
+| Nome do arquivo | `{V_hex}` — V como identificador único |
+| $C$ | Ciphertext (AES-256-GCM) — o segredo encriptado |
+| $n$ | Número de bits da semente — dificuldade |
+| $t_0$ | Ano de criação |
+| $T$ | Tempo alvo em anos |
+
+**Leitura (sem autenticação):** o repositório é público. Qualquer pessoa pode listar e ler os vaults via GitHub API:
+- `GET /repos/{owner}/time-vault-secrets/contents/` — lista todos os vaults
+- `GET /repos/{owner}/time-vault-secrets/contents/{V_hex}` — lê um vault específico
+
+**Escrita (token público):** um Personal Access Token (PAT) fine-grained é **hardcoded no cliente** com permissão `Contents:write` apenas no repositório `time-vault-secrets`. Qualquer pessoa pode adicionar vaults — isso é intencional. Deleção é impedida por branch protection rules (sem force-push, sem deleção direta). O repositório é um **registro público e imutável** de vaults.
+
+**Relação com a blockchain:** a transação Bitcoin de financiamento contém, no OP_RETURN, a URL completa do vault:
+
+$$\texttt{https://julioflima.github.io/timevault/v/\{V\_hex\}?n=\{n\}}$$
+
+Essa URL aponta para a página de decrypt do site, que busca o arquivo `{V_hex}` no repositório GitHub. Assim, o blockchain **aponta para o arquivo que contém o segredo encriptado** — quem encontra $S$ pode seguir a URL, obter $C$, derivar $K = \text{HMAC-SHA256}(S, V)$, e decriptar $F$.
+
+**Fluxo completo:**
+1. Blockchain (OP_RETURN) → URL com $V$ e $n$
+2. URL → GitHub repo → arquivo `{V_hex}` → $C$
+3. Com $S$ (revelado no witness ou obtido por busca): $K = \text{HMAC-SHA256}(S, V)$
+4. $F = \text{AES-256-GCM.Dec}(K, C)$ — segredo revelado
+
+---
+
+### Mecanismo de Bounty — Hashlock P2WSH
+
+O Time Vault usa uma transação Bitcoin para registrar o vault na blockchain e travar um bounty que só pode ser resgatado revelando $S$. A mesma transação contém a URL para o arquivo com o ciphertext $C$ (no OP_RETURN), criando um vínculo permanente entre o bounty on-chain e o segredo encriptado off-chain.
+
+**Transação de Financiamento (criada pelo criador do vault):**
+
+A transação possui duas saídas:
+
+**Saída 0 — P2WSH Hashlock (Bounty):**
+
+$$\text{Script} = \text{OP\_SHA256}\ \langle \text{SHA256}(S) \rangle\ \text{OP\_EQUAL}$$
+
+| Elemento | Descrição |
+|----------|-----------|
+| P2WSH | Pay-to-Witness-Script-Hash — endereço SegWit que referencia um script arbitrário |
+| Hashlock | Trava por hash: os fundos só podem ser gastos fornecendo a pré-imagem do hash |
+| `SHA256(S)` | O hash-alvo — computado a partir de $S$ durante a criação do vault |
+| `OP_SHA256` | Opcode Bitcoin que computa SHA-256 do dado no topo da pilha |
+| `OP_EQUAL` | Verifica se o hash computado é igual ao hash-alvo |
+| Valor | Qualquer quantia acima de 330 sats (dust limit para P2WSH) |
+
+Para gastar essa saída, o atacante **deve** fornecer $S$ no witness data:
+
+$$\text{Witness:}\ \langle S \rangle$$
+
+O nó Bitcoin executa `SHA256(S)` e verifica contra o hash-alvo no script. Se igual, a transação é válida e os fundos são liberados. **$S$ fica permanentemente registrado no blockchain** — qualquer pessoa pode ler o witness data da transação de gasto.
+
+**Saída 1 — OP_RETURN (Metadados do Vault):**
+
+$$\text{OP\_RETURN}\ \texttt{"https://julioflima.github.io/timevault/v/\{V\_hex\}?n=\{n\}"}$$
+
+| Elemento | Descrição |
+|----------|-----------|
+| OP_RETURN | Marca a saída como não-gastável; usado para armazenar dados arbitrários no blockchain |
+| URL completa | Link clicável em block explorers, aponta diretamente para a página de decrypt do vault |
+| `{V_hex}` | V codificado em hexadecimal (64 caracteres ASCII) — identifica unicamente o vault |
+| `?n={n}` | Dificuldade como query parameter — a página pode ler automaticamente |
+| `t_0` | **Não armazenado** — derivado do timestamp do bloco (já registrado pelo Bitcoin) |
+| Custo | 0 sats (saída não-gastável, sem dust limit) |
+| Tamanho | ~111 bytes (ASCII). Desde Bitcoin Core v30 (Out 2025), OP_RETURN suporta até ~100KB |
+
+**Custo mínimo total da transação:**
+
+| Componente | Valor |
+|------------|-------|
+| Bounty (saída P2WSH) | ≥ 330 sats (dust limit) |
+| OP_RETURN | 0 sats |
+| Fee (~220 vBytes × 1 sat/vB) | ~220 sats |
+| **Total** | **~550 sats (~R$0,50 a ~$100K/BTC)** |
+
+---
+
+### Transação de Gasto — Prova de Quebra On-Chain
+
+Quando alguém quebra o vault (encontra $S$ por busca exaustiva):
+
+$$\text{Witness data:}\ \langle S \rangle$$
+
+O nó Bitcoin:
+1. Pega $S$ do witness
+2. Computa `SHA256(S)`
+3. Compara com o hash-alvo no script P2WSH
+4. Se igual → transação válida → fundos transferidos ao atacante
+
+**Verificação pública:** qualquer observador pode, a partir de $S$ revelado:
+
+$$V_{\text{check}} = \text{HMAC-SHA256}(S,\ n) \stackrel{?}{=} V$$
+
+Se $V_{\text{check}} = V$ (o $V$ do OP_RETURN na transação de financiamento), está confirmado que o vault foi legitimamente quebrado. O ciclo completo é verificável:
+
+| Evento | Dado on-chain | Verificação |
+|--------|--------------|-------------|
+| Vault criado | OP_RETURN: URL com $V$ e $n$ | Link para o vault + dificuldade. $t_0$ do timestamp do bloco |
+| Bounty travado | Saída P2WSH com hashlock | Fundos travados até $S$ ser encontrado |
+| Vault quebrado | $S$ revelado no witness | $\text{HMAC-SHA256}(S,\ n) = V$ ✓ |
+
+**O blockchain se torna um registro de prova-de-quebra**: vault existe ($V$ no OP_RETURN) → bounty travado (P2WSH) → vault quebrado ($S$ no witness).
+
+---
+
+### Comparação com Carteiras Convencionais
+
+| Propriedade | Carteira Bitcoin normal | Time Vault bounty |
+|-------------|------------------------|-------------------|
+| Segredo | Chave privada (256 bits, fixo) | Semente $S$ ($n$ bits, configurável) |
+| Proteção | ECDSA (curva secp256k1) | HMAC-SHA256 (busca exaustiva) |
+| Chave pública exposta? | P2PK: sim. P2WPKH: só no gasto | Hashlock: `SHA256(S)` no script |
+| Vulnerável a quântica? | Sim (Shor's algorithm) | Não (hash, não curva elíptica) |
+| Custo de quebra quantificável? | Não (depende de avanço quântico) | Sim: $\$1\text{M} \times 2^{(n - \mathcal{B})}$ |
+| Tempo de quebra intencional? | Não (espera-se que nunca quebre) | Sim (degradação natural é o objetivo) |
+| Prova de quebra on-chain? | Gasto da transação | $S$ revelado no witness |
+
 
 
 
