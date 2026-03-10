@@ -26,16 +26,7 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
   - `timevault`: "Cost-based time-lock encryption protocol — encrypt secrets that become breakable over time as hardware improves. Static site + Python algorithm + Bitcoin bounty integration."
   - `time-vault-secrets`: "Public append-only vault storage for Time Vault encrypted secrets. Each file is a time-locked ciphertext identified by its verification hash V."
 
-- **README.md** for `timevault` repo (root):
-  - Title: "Time Vault — Cost-Based Time-Lock Encryption"
-  - One-paragraph summary: encrypt a secret (phrase or file) so that breaking it costs $1M today but becomes cheaper as hardware evolves. Based on HMAC-SHA256 brute-force benchmarks fitted to 80 years of hardware data (1945–2025).
-  - Section: **How it works** — 6-step protocol summary (difficulty → seed → verification hash → key → encrypt → publish). Reference the diagram image from `assets/`.
-  - Section: **Try it** — link to the live GitHub Pages site.
-  - Section: **Whitepaper** — link to the PDF and `docs/idea.md`.
-  - Section: **Project structure** — brief directory map (`algorithm/`, `docs/`, `assets/`, `web/`, `time-vault-secrets/`).
-  - Section: **Bitcoin integration** — one paragraph explaining the P2WSH hashlock bounty + OP_RETURN on-chain proof.
-  - Section: **Development** — `npm install`, `npm run dev`, `npm run build`. Python: `pip install -r algorithm/requirements.txt`, `python algorithm/vault.py`.
-  - Keep it concise — link to `docs/idea.md` for full details.
+- **Vault files stored in `secrets/` directory** inside the submodule (not at root). Path: `time-vault-secrets/secrets/{V_hex}.vault.json`.
 
 ---
 
@@ -172,6 +163,98 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
 15. **PDF in CI** — `pandoc idea.md -o static/whitepaper.pdf --pdf-engine=xelatex`. Serve at `/whitepaper.pdf`.
 
 16. **Article section** — Title: "Bitcoin is a Time Vault". First paragraph: the consequence — if cryptography breaks, all wallets are vulnerable. Reference Satoshi Nakamoto's early wallets being gradually broken and funds stolen. Link to PDF download.
+
+---
+
+## Phase 9: READMEs (last — after everything is stable)
+
+17. **README.md** for `timevault` repo (root):
+    - Title: "Time Vault — Cost-Based Time-Lock Encryption"
+    - One-paragraph summary: encrypt a secret so that breaking it costs $1M today but becomes cheaper as hardware evolves. Based on HMAC-SHA256 brute-force benchmarks fitted to 80 years of hardware data (1945–2025).
+    - Section: **How it works** — 6-step protocol summary with diagram from `assets/`.
+    - Section: **Try it** — link to the live GitHub Pages site.
+    - Section: **Whitepaper** — link to PDF and `docs/idea.md`.
+    - Section: **Project structure** — directory map.
+    - Section: **Bitcoin integration** — P2WSH hashlock bounty + OP_RETURN.
+    - Section: **Development** — install and run commands.
+
+18. **README.md** for `time-vault-secrets` submodule — a hacker's guide to breaking vaults and claiming bounties:
+
+    - Title: "⛏️ Break These Vaults — Claim Secrets & Bitcoin"
+    - Opening: "Every file in `secrets/` is a locked safe. Inside is a secret someone encrypted for the future. If you crack it, the secret is yours — and so is the Bitcoin bounty."
+
+    - Section: **Vault File Structure** — anatomy of a single `secrets/{V_hex}.vault.json`:
+      ```json
+      {
+        "C": "base64-encoded ciphertext (nonce ∥ AES-256-GCM ciphertext+tag)",
+        "n": 67,
+        "t0": 2026,
+        "T": 10.0
+      }
+      ```
+      | Field | Meaning |
+      |-------|---------|
+      | filename `{V_hex}` | Verification hash — `HMAC-SHA256(S, n)` hex-encoded. This is the lock. |
+      | `C` | Ciphertext — the encrypted secret (base64). First 12 bytes = nonce, rest = AES-GCM ciphertext+tag. |
+      | `n` | Seed length in bits — determines brute-force difficulty. |
+      | `t0` | Year the vault was created. |
+      | `T` | Target unlock time in years (when breaking becomes affordable). |
+
+    - Section: **How to Break a Vault** — step-by-step attack guide:
+      1. Pick a target: choose a `{V_hex}.vault.json` from `secrets/`
+      2. Read `n` — the seed is `n` bits long, so there are `2^n` candidates
+      3. Brute-force: for each candidate `S'` from `0` to `2^n - 1`:
+         - Compute `V' = HMAC-SHA256(S', n.to_bytes(4, "big"))`
+         - If `hex(V') == V_hex` → you found the seed `S`
+      4. Derive the decryption key: `K = HMAC-SHA256(S, V)`
+      5. Decrypt: split `C` → nonce (first 12 bytes) + ciphertext (rest) → `F = AES-256-GCM.Decrypt(K, nonce, ciphertext)`
+      6. `F` is the original secret (plaintext or file bytes)
+
+    - Section: **What It Costs You** — attack economics:
+      - Formula: `Cost = $1M × 2^(n − B(t₀))` where B(t₀) is the benchmark (bits/$1M/year at creation time)
+      - As hardware improves, B grows → cost drops exponentially
+      - Table showing example vaults: n, t0, cost today vs cost in 5/10/20 years
+      - Key insight: "The creator chose T so that breaking becomes affordable around year `t0 + T`"
+
+    - Section: **Best Hardware for the Job** — practical attack advice:
+      - HMAC-SHA256 is the target hash function
+      - GPUs are optimal (high parallelism, commodity pricing). Bitcoin ASICs are SHA-256d — they do NOT work for HMAC-SHA256.
+      - Recommended: rent GPU clusters (cloud providers, vast.ai, etc.)
+      - Each GPU attempt: compute `HMAC-SHA256(candidate, n_bytes)` and compare to V
+
+    - Section: **Claim the Bitcoin Bounty** — step-by-step money guide:
+      1. Check if this vault has a bounty: search the Bitcoin blockchain for an OP_RETURN containing `timevault/v/{V_hex}.vault.json`
+      2. The funding transaction has a P2WSH output locked with: `OP_SHA256 <SHA256(S)> OP_EQUAL`
+      3. To spend: create a transaction with witness `<S>` that satisfies the hashlock
+      4. The bounty UTXO (output 0 of the funding tx) is now yours
+      5. Note: revealing S on-chain proves the vault is cracked — anyone can then derive K and decrypt C
+
+    - Section: **Verify a Solution** — quick check without decrypting:
+      - Given a claimed seed `S`: compute `HMAC-SHA256(S, n.to_bytes(4, "big"))` → if it equals V (the filename), the solution is valid
+      - No need to decrypt C to verify — useful for bounty claims
+
+    - Section: **Python Example** — complete minimal script:
+      ```python
+      import hmac, hashlib, base64
+      from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+      V_hex = "d7d6d05a..."  # filename without .vault.json
+      S = bytes.fromhex("9a")  # the cracked seed
+      n = 8
+      C_b64 = "P1iU/r5xUIhK..."  # from vault file
+
+      # Verify
+      V_check = hmac.new(S, n.to_bytes(4, "big"), hashlib.sha256).digest()
+      assert V_check.hex() == V_hex, "Wrong seed!"
+
+      # Derive key
+      K = hmac.new(S, V_check, hashlib.sha256).digest()
+
+      # Decrypt
+      C = base64.b64decode(C_b64)
+      plaintext = AESGCM(K).decrypt(C[:12], C[12:], None)
+      print(plaintext.decode())  # → the secret
+      ```
 
 ---
 
