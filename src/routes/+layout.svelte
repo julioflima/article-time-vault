@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
-	import '$lib/styles/global.scss';
+  import type { Snippet } from "svelte";
+  import "$lib/styles/global.scss";
 
-	let { children }: { children: Snippet } = $props();
+  let { children }: { children: Snippet } = $props();
 </script>
 
 <div class="bg-ambient"></div>
