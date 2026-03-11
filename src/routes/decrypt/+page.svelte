@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import StepFlow from "$lib/components/StepFlow.svelte";
   import { preload, decryptVault } from "$lib/pyodide";
+  import { listVaults, fetchVault, type VaultListItem } from "$lib/github";
 
   let current = $state(0);
   let seedHex = $state("");
@@ -9,6 +10,10 @@
   let decrypting = $state(false);
   let decryptedText = $state("");
   let error = $state("");
+
+  let vaults = $state<VaultListItem[]>([]);
+  let loadingVaults = $state(true);
+  let selectedV = $state("");
 
   async function startDecrypt() {
     if (decrypting || !vaultInput || !seedHex) return;
@@ -23,8 +28,27 @@
     }
   }
 
-  onMount(() => {
+  async function selectVault(v: VaultListItem) {
+    selectedV = v.V;
+    try {
+      const data = await fetchVault(v.V);
+      vaultInput = JSON.stringify(data, null, 2);
+      current = 2; // jump to seed input
+    } catch {
+      vaultInput = "";
+      current = 1; // fall back to manual paste
+    }
+  }
+
+  onMount(async () => {
     preload();
+    try {
+      vaults = await listVaults();
+    } catch {
+      vaults = [];
+    } finally {
+      loadingVaults = false;
+    }
   });
 </script>
 
@@ -35,7 +59,25 @@
     <h2>Select a vault</h2>
     <p class="hint">Public vaults from time-vault-secrets</p>
     <div class="vault-list">
-      <p class="mono placeholder">Loading vaults...</p>
+      {#if loadingVaults}
+        <p class="mono placeholder">Loading vaults...</p>
+      {:else if vaults.length === 0}
+        <p class="mono placeholder">No vaults published yet</p>
+      {:else}
+        <ul class="vault-items">
+          {#each vaults as v}
+            <li>
+              <button
+                class="vault-item mono"
+                class:active={selectedV === v.V}
+                onclick={() => selectVault(v)}
+              >
+                {v.V.slice(0, 16)}...{v.V.slice(-8)}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </div>
     <p class="hint">Or paste vault JSON below &#9660;</p>
   </div>
@@ -110,11 +152,45 @@
   .vault-list {
     @include glass(12px, $color-white-10, $color-white-20);
     width: 100%;
-    min-height: 200px;
+    max-height: 250px;
+    overflow-y: auto;
     padding: 1rem;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .vault-items {
+    width: 100%;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .vault-item {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: $color-white-10;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: $color-white-60;
+    font-size: 0.75rem;
+    cursor: pointer;
+    text-align: left;
+    transition: $transition-fast;
+
+    &:hover {
+      background: $color-white-20;
+      color: $color-white;
+    }
+
+    &.active {
+      border-color: $color-white;
+      color: $color-white;
+    }
   }
 
   .placeholder {

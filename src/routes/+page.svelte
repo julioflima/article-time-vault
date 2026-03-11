@@ -8,6 +8,7 @@
     encryptFile,
     type VaultResult,
   } from "$lib/pyodide";
+  import { publishVault, isTokenConfigured, type VaultFile } from "$lib/github";
 
   let current = $state(0);
   let unlockDate = $state("");
@@ -19,6 +20,10 @@
   let vaultResult = $state<VaultResult | null>(null);
   let pyReady = $state(false);
   let pyLoading = $state(false);
+
+  let publishing = $state(false);
+  let published = $state(false);
+  let publishError = $state("");
 
   // Computed from date
   let yearsFromNow = $derived(() => {
@@ -93,6 +98,25 @@
     a.download = `vault_${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function publish() {
+    if (!vaultResult || publishing || published) return;
+    publishing = true;
+    publishError = "";
+    try {
+      const { S, ...vault } = vaultResult;
+      const result = await publishVault(vaultResult.V, vault as VaultFile);
+      if (result.ok) {
+        published = true;
+      } else {
+        publishError = result.message;
+      }
+    } catch (err) {
+      publishError = err instanceof Error ? err.message : "Publish failed";
+    } finally {
+      publishing = false;
+    }
   }
 
   onMount(() => {
@@ -226,8 +250,23 @@
       </div>
       <div class="result-actions">
         <button class="btn" onclick={downloadVault}>Download vault</button>
+        {#if isTokenConfigured()}
+          {#if published}
+            <span class="publish-ok">Published ✓</span>
+          {:else}
+            <button
+              class="btn btn--outline"
+              onclick={publish}
+              disabled={publishing}
+              >{publishing ? "Publishing..." : "Publish to GitHub"}</button
+            >
+          {/if}
+        {/if}
         <a href="/timevault/decrypt" class="btn btn--outline">Go to Decrypt</a>
       </div>
+      {#if publishError}
+        <p class="publish-error">{publishError}</p>
+      {/if}
     {:else}
       <h2>Your vault is ready</h2>
       <p class="hint">Press Enter or click below to encrypt</p>
@@ -428,6 +467,17 @@
     gap: 1rem;
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .publish-ok {
+    color: #4caf50;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .publish-error {
+    color: #ff6b6b;
+    font-size: 0.875rem;
   }
 
   .spinner {
