@@ -210,11 +210,11 @@
 
   .btn--outline {
     background: transparent;
-    color: $color-black;
-    border: 2px solid $color-black;
+    color: $color-white;
+    border: 2px solid $color-white-90;
 
     &:hover {
-      background: $color-black;
+      background: $color-black-50;
       color: $color-white;
     }
   }

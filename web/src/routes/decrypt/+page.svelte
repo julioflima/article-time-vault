@@ -52,7 +52,7 @@
   });
 </script>
 
-<StepFlow bind:current steps={[step1, step2, step3, step4]} />
+<StepFlow bind:current fullscreen={false} steps={[step1, step2, step3, step4]} />
 
 {#snippet step1()}
   <div class="card step-card text-center">
@@ -146,7 +146,7 @@
 
   .hint {
     font-size: 0.875rem;
-    color: $color-white-60;
+    color: $color-black-60;
   }
 
   .vault-list {
@@ -176,7 +176,7 @@
     background: $color-white-10;
     border: 1px solid transparent;
     border-radius: 6px;
-    color: $color-white-60;
+    color: $color-black-60;
     font-size: 0.75rem;
     cursor: pointer;
     text-align: left;
@@ -184,17 +184,17 @@
 
     &:hover {
       background: $color-white-20;
-      color: $color-white;
+      color: $color-black-90;
     }
 
     &.active {
-      border-color: $color-white;
-      color: $color-white;
+      border-color: $color-black-50;
+      color: $color-black-90;
     }
   }
 
   .placeholder {
-    color: $color-white-20;
+    color: $color-black-40;
   }
 
   .result {
@@ -210,7 +210,7 @@
   }
 
   .error {
-    color: #ff6b6b;
+    color: $color-black-60;
     font-size: 0.875rem;
   }
 

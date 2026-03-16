@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { base } from "$app/paths";
   import StepFlow from "$lib/components/StepFlow.svelte";
   import {
     preload,
@@ -138,13 +139,14 @@
 
 <StepFlow
   bind:current
+  fullscreen={true}
   steps={[step1, step2, step3, step4, step5, step6, step7]}
 />
 
 {#snippet step1()}
   <div class="hero text-center">
     <h1 class="hero__title">Time Vault</h1>
-    <p class="hero__sub">Add secret to future</p>
+    <p class="hero__sub hero__title">Secrets of future</p>
     <button
       class="hero__arrow"
       onclick={() => (current = 1)}
@@ -158,7 +160,7 @@
 
 {#snippet step2()}
   <div class="card step-card text-center">
-    <h2>When should this secret be unlockable?</h2>
+    <h2>Time for the vault be open?</h2>
     <input
       type="date"
       class="input date-input"
@@ -173,9 +175,8 @@
 
 {#snippet step3()}
   <div class="card step-card text-center">
-    <p class="cost-label">Today it costs</p>
+    <p class="cost-label">Today it costs to open this vault:</p>
     <h2 class="cost-value">{costDisplay()}</h2>
-    <p class="cost-label">to break this vault</p>
     <div class="cost-meta mono">
       <span>{nBits()} bits</span>
       <span>&bull;</span>
@@ -286,7 +287,7 @@
             >
           {/if}
         {/if}
-        <a href="/timevault/decrypt" class="btn btn--outline">Go to Decrypt</a>
+        <a href="{base}/decrypt" class="btn btn--outline">Go to Decrypt</a>
       </div>
       {#if publishError}
         <p class="publish-error">{publishError}</p>
@@ -303,22 +304,27 @@
   @use "$lib/styles/variables" as *;
 
   .hero {
-    max-width: 600px;
+    width: min(100%, 72rem);
+    max-width: none;
+    padding-inline: 1rem;
   }
 
   .hero__title {
-    font-family: "Kalam", cursive;
-    font-size: clamp(3rem, 8vw, 6rem);
-    font-weight: 700;
+    font-family: $font-brand;
+    display: block;
+    width: 100%;
+    font-size: clamp(4rem, 22vw, 16rem);
+    font-weight: 400;
     letter-spacing: -0.01em;
-    line-height: 1;
+    line-height: 0.9;
     margin-bottom: 0.5rem;
+    white-space: nowrap;
     color: $color-black;
   }
 
   .hero__sub {
     font-size: clamp(1rem, 2.5vw, 1.5rem);
-    color: $color-white-60;
+    color: $color-black-60;
     margin-bottom: 3rem;
   }
 
@@ -330,7 +336,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    color: $color-white-60;
+    color: $color-black-60;
     animation: bounce 2s infinite;
   }
 
@@ -384,7 +390,7 @@
 
   .hint {
     font-size: 0.875rem;
-    color: $color-white-60;
+    color: $color-black-60;
   }
 
   .cost-value {
@@ -394,14 +400,14 @@
 
   .cost-label {
     font-size: 1rem;
-    color: $color-white-60;
+    color: $color-black-60;
   }
 
   .cost-meta {
     display: flex;
     gap: 0.75rem;
     font-size: 0.875rem;
-    color: $color-white-60;
+    color: $color-black-60;
   }
 
   .type-buttons {
@@ -420,7 +426,7 @@
     cursor: pointer;
 
     p {
-      color: $color-white-60;
+      color: $color-black-60;
     }
   }
 
@@ -439,7 +445,7 @@
     align-items: center;
     justify-content: center;
     font-size: 2rem;
-    color: $color-white-20;
+    color: $color-black-40;
   }
 
   .qr-img {
@@ -450,7 +456,7 @@
 
   .btc-addr {
     font-size: 0.65rem;
-    color: $color-white-60;
+    color: $color-black-60;
     word-break: break-all;
     max-width: 100%;
   }
@@ -461,13 +467,13 @@
     padding: 1.5rem;
     text-align: left;
     font-size: 0.875rem;
-    color: $color-white-60;
+    color: $color-black-60;
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
 
     strong {
-      color: $color-white;
+      color: $color-black;
     }
   }
 
@@ -484,7 +490,7 @@
 
   .seed-label {
     font-size: 0.875rem;
-    color: $color-white-60;
+    color: $color-black-60;
     margin-bottom: 0.5rem;
   }
 
@@ -496,7 +502,7 @@
     font-size: 0.75rem;
     word-break: break-all;
     user-select: all;
-    color: $color-white;
+    color: $color-black-90;
   }
 
   .result-actions {
@@ -507,13 +513,13 @@
   }
 
   .publish-ok {
-    color: #4caf50;
+    color: $color-black-80;
     font-size: 0.875rem;
     font-weight: 600;
   }
 
   .publish-error {
-    color: #ff6b6b;
+    color: $color-black-60;
     font-size: 0.875rem;
   }
 

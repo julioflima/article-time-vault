@@ -10,19 +10,43 @@
 
 html,
 body {
-	height: 100%;
-	overflow: hidden;
+	min-height: 100%;
+	overflow-x: hidden;
+	overflow-y: scroll;
 	font-family: $font-stack;
-	color: $color-white;
+	color: $color-black-80;
+	background: $color-utopia-fallback;
 	-webkit-font-smoothing: antialiased;
+}
+
+html {
+	scroll-behavior: smooth;
+	scrollbar-gutter: stable;
+	scrollbar-width: auto;
+	scrollbar-color: $color-black $color-white-20;
+}
+
+html::-webkit-scrollbar {
+	width: 14px;
+}
+
+html::-webkit-scrollbar-track {
+	background: $color-white-20;
+}
+
+html::-webkit-scrollbar-thumb {
+	background: $color-black;
+	border: 3px solid $color-white-20;
+	border-radius: 999px;
 }
 
 // Background layers
 .bg-ambient {
 	position: fixed;
 	inset: 0;
-	z-index: -2;
-	background: url('/timevault/utopia.png') repeat center / 400px;
+	z-index: 0;
+	pointer-events: none;
+	background: $color-utopia-fallback var(--utopia-image) repeat center / 400px;
 	filter: blur(60px) saturate(1.2);
 	transform: scale(1.2); // prevent blur edge gaps
 }
@@ -30,8 +54,10 @@ body {
 .bg-image {
 	position: fixed;
 	inset: 0;
-	z-index: -1;
-	background: url('/timevault/utopia.png') no-repeat center / cover;
+	z-index: 1;
+	pointer-events: none;
+	background: $color-utopia-fallback var(--utopia-image) no-repeat center /
+		cover;
 	opacity: 0.15;
 }
 
@@ -68,7 +94,7 @@ body {
 		border: 1px solid $color-white-60;
 
 		&:hover {
-			background: $color-white-10;
+			background: $color-black-20;
 		}
 	}
 
@@ -85,19 +111,19 @@ body {
 	padding: 0.75rem 1rem;
 	font-family: $font-stack;
 	font-size: 1rem;
-	color: $color-white;
+	color: $color-black-90;
 	background: $color-white-10;
-	border: 1px solid $color-white-20;
+	border: 1px solid $color-black-20;
 	border-radius: 8px;
 	outline: none;
 	transition: border-color $transition-fast;
 
 	&::placeholder {
-		color: $color-white-60;
+		color: $color-black-50;
 	}
 
 	&:focus {
-		border-color: $color-white-60;
+		border-color: $color-black-50;
 	}
 }
 
@@ -112,6 +138,9 @@ textarea.input {
 }
 
 .text-center {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
 	text-align: center;
 }
 

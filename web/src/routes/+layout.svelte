@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { base } from "$app/paths";
+  import { assets, base } from "$app/paths";
   import "$lib/styles/global.scss";
 
   let { children }: { children: Snippet } = $props();
+  const utopiaStyle = `--utopia-image: url('${assets}/utopia.png')`;
 </script>
 
 <nav class="site-nav">
@@ -17,9 +18,11 @@
   </div>
 </nav>
 
-<div class="bg-ambient"></div>
-<div class="bg-image"></div>
-{@render children()}
+<div class="bg-ambient" style={utopiaStyle}></div>
+<div class="bg-image" style={utopiaStyle}></div>
+<div class="page-content">
+  {@render children()}
+</div>
 
 <style lang="scss">
   @use "$lib/styles/variables" as *;
@@ -42,9 +45,9 @@
   }
 
   .site-nav__brand {
-    font-family: "Kalam", cursive;
+    font-family: $font-brand;
     font-size: 1.25rem;
-    font-weight: 700;
+    font-weight: 400;
     color: $color-black;
     text-decoration: none;
   }
@@ -66,5 +69,10 @@
         color: $color-black;
       }
     }
+  }
+
+  .page-content {
+    position: relative;
+    z-index: 2;
   }
 </style>
