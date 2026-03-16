@@ -8,10 +8,10 @@
 </script>
 
 <nav class="site-nav">
-  <a href="{base}/" class="site-nav__brand">Time Vault</a>
+  <a href="{base}/" class="site-nav__brand"></a>
   <div class="site-nav__links">
-    <a href="{base}/">Encrypt</a>
-    <a href="{base}/decrypt">Decrypt</a>
+    <a href="{base}/">Secret</a>
+    <a href="{base}/decrypt">Reveal</a>
     <a href="{base}/article">Article</a>
     <a href="{base}/whitepaper.pdf" target="_blank" rel="noopener">Whitepaper</a
     >
@@ -37,7 +37,6 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1.5rem;
-    @include glass(16px, rgba(255, 255, 255, 0.08), $color-white-10);
     border-radius: 0;
     border-top: none;
     border-left: none;

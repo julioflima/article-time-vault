@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { base } from "$app/paths";
   import StepFlow from "$lib/components/StepFlow.svelte";
+  import YearRoulette from "$lib/components/YearRoulette.svelte";
   import {
     preload,
     calcParams,
@@ -16,8 +17,10 @@
     type BitcoinInfo,
   } from "$lib/bitcoin";
 
+  const currentYear = new Date().getFullYear();
+
   let current = $state(0);
-  let unlockDate = $state("");
+  let unlockYear = $state(currentYear + 1);
   let secretType = $state<"phrase" | "file" | null>(null);
   let phrase = $state("");
   let file = $state<File | null>(null);
@@ -33,12 +36,9 @@
 
   let btcInfo = $state<BitcoinInfo | null>(null);
 
-  // Computed from date
+  // The vault schedule only cares about year precision.
   let yearsFromNow = $derived(() => {
-    if (!unlockDate) return 0;
-    const target = new Date(unlockDate).getFullYear();
-    const now = new Date().getFullYear();
-    return Math.max(target - now, 0);
+    return Math.max(unlockYear - currentYear, 0);
   });
 
   let nBits = $derived(() => {
@@ -76,14 +76,13 @@
     pyLoading = !pyReady;
 
     try {
-      const t0 = new Date().getFullYear();
       const T = yearsFromNow();
 
       if (secretType === "phrase") {
-        vaultResult = await encryptPhrase(phrase, t0, T || 1);
+        vaultResult = await encryptPhrase(phrase, currentYear, T || 1);
       } else if (file) {
         const buf = new Uint8Array(await file.arrayBuffer());
-        vaultResult = await encryptFile(buf, t0, T || 1);
+        vaultResult = await encryptFile(buf, currentYear, T || 1);
       }
       pyReady = true;
       pyLoading = false;
@@ -161,11 +160,11 @@
 {#snippet step2()}
   <div class="card step-card text-center">
     <h2>Time for the vault be open?</h2>
-    <input
-      type="date"
-      class="input date-input"
-      bind:value={unlockDate}
-      min={new Date().toISOString().split("T")[0]}
+    <YearRoulette
+      bind:value={unlockYear}
+      minYear={currentYear + 1}
+      maxYear={currentYear + 100}
+      label="Unlock year"
     />
     {#if yearsFromNow() > 0}
       <p class="hint">{yearsFromNow()} years from now</p>
@@ -316,15 +315,16 @@
     font-size: clamp(4rem, 22vw, 16rem);
     font-weight: 400;
     letter-spacing: -0.01em;
-    line-height: 0.9;
-    margin-bottom: 0.5rem;
+    line-height: 0.7;
     white-space: nowrap;
     color: $color-black;
   }
 
   .hero__sub {
-    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    font-family: "Bastliga One", $font-stack;
+    font-size: clamp(2rem, 5vw, 5rem);
     color: $color-black-60;
+    letter-spacing: 0.08em;
     margin-bottom: 3rem;
   }
 
@@ -380,12 +380,6 @@
       font-size: 1.5rem;
       font-weight: 600;
     }
-  }
-
-  .date-input {
-    max-width: 250px;
-    text-align: center;
-    color-scheme: dark;
   }
 
   .hint {
