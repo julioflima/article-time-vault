@@ -8,7 +8,7 @@
 </script>
 
 <nav class="site-nav">
-  <a href="{base}/" class="site-nav__brand"></a>
+  <a href="{base}/" class="site-nav__brand hero__title">tv</a>
   <div class="site-nav__links">
     <a href="{base}/">Secret</a>
     <a href="{base}/decrypt">Reveal</a>
@@ -26,6 +26,16 @@
 
 <style lang="scss">
   @use "$lib/styles/variables" as *;
+
+  :global(html),
+  :global(body) {
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    touch-action: none;
+  }
 
   .site-nav {
     position: fixed;
@@ -71,7 +81,9 @@
   }
 
   .page-content {
-    position: relative;
+    position: fixed;
+    inset: 0;
     z-index: 2;
+    overflow: hidden;
   }
 </style>

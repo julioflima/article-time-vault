@@ -83,10 +83,22 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
 
 10. **Storage structure (GitHub repo as database)** — Separate public repo `time-vault-secrets` acts as a flat-file database. Each vault is stored as `{V_hex}.vault.json` containing `{ "C", "n", "t0", "T" }`. V (the public verification value) is the filename — guarantees uniqueness and enables lookup by V.
 
-11. **Write via GitHub API** (TypeScript, `src/lib/github.ts`) — A **public fine-grained PAT** is hardcoded in the client with `Contents:write` scope on `time-vault-secrets` only. Anyone can add vault files — this is intentional (the repo is an append-only public database). Deletion is prevented via GitHub branch protection rules (require PR for deletion, restrict force-push). On "Proceed" after encryption:
-    - `PUT /repos/{owner}/time-vault-secrets/contents/{V_hex}.vault.json` with Base64-encoded JSON body
-    - Commit message: `"vault: {V_hex_short} | n={n} | unlock={T}"`
-    - If the file already exists (409 conflict), the vault V is a duplicate — show error
+11. **Write via GitHub Actions intermediary** (TypeScript, `src/lib/github.ts` + `.github/workflows/store-vault.yml`) — Instead of exposing a token to the client, a **GitHub Action acts as a secure intermediary** for writing vault files. The token (`GITHUB_TOKEN` or a fine-grained PAT) stays protected as a **repository secret** — the external user never has direct access to the repo.
+
+    **GitHub Action workflow (`.github/workflows/store-vault.yml`):**
+    - Triggered via `workflow_dispatch` (API call from the Worker or client)
+    - Receives the vault file content and filename as inputs
+    - **Validates** the file is in the `secrets/` directory (rejects any other path)
+    - **Checks if the file already exists** — blocks overwriting (append-only enforcement)
+    - **Commits** the file: `vault: {V_hex_short} | n={n} | unlock={T}`
+    - Returns success/failure status
+
+    **The Worker also triggers this Action** — on each request, the Worker calls the GitHub Actions API (`POST /repos/{owner}/time-vault-secrets/actions/workflows/store-vault.yml/dispatches`) instead of writing directly. This means the same storage logic works both from the Worker (Bitcoin flow) and from direct client requests.
+
+    On "Proceed" after encryption:
+    - Client calls the Worker endpoint with vault data
+    - Worker triggers the GitHub Action via API
+    - If the file already exists → Action rejects → show error (duplicate vault V)
 
 12. **Read / List via GitHub API (no auth)** — Since `time-vault-secrets` is public:
     - `GET /repos/{owner}/time-vault-secrets/contents/` returns all vault files (no token needed)
@@ -123,7 +135,7 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
     - Generate the P2WSH address from the hashlock script
     - Display: BIP21 QR code pointing to the Worker's donation address
 
-14. **Payment flow — Worker (Option A: Intermediary)** — A stateless Worker handles transaction construction so the user only needs to scan a single QR code from any Bitcoin wallet.
+14. **Payment flow — Worker (Option A: Intermediary)** — A stateless Worker **triggered per-request** handles transaction construction and vault storage. The Worker is activated on each incoming request (not a persistent monitor) — this means it also works as a **GitHub Action** (same logic, different trigger).
 
     **User flow (client-side):**
     - Site generates a BIP21 QR code: `bitcoin:{donation_address}?amount={amount}`
@@ -131,7 +143,7 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
     - User scans QR with any Bitcoin wallet and pays. Done — zero complexity.
 
     **Worker flow (server-side, `worker/src/index.ts`):**
-    1. Monitors the donation address for incoming transactions (via mempool.space WebSocket or polling API)
+    1. Triggered per-request: receives webhook/API call when a payment arrives at the donation address (via mempool.space webhook or scheduled polling Action)
     2. Parses the OP_RETURN memo from the user's tx to extract `V_hex` and `P2WSH_address`
     3. **Deduplication via blockchain (no database):** queries blockchain API for any existing OP_RETURN containing `timevault/v/{V_hex}.vault.json`. If found → already processed, skip.
     4. Builds the **funding transaction** with 3 outputs:
@@ -312,7 +324,7 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
 
 1. **PyScript loading UX** — Using **Option A** (`cryptography` in Pyodide). Slower first load (~17MB) but simpler code, zero bridge bugs, same algorithm as CLI. Show loading spinner ("Initializing cryptographic engine..."), disable buttons until ready. All cached after first visit.
 
-2. **GitHub token (public, append-only)** — The PAT is public and hardcoded in the client. It can only create/update files in `time-vault-secrets` — it cannot delete files, force-push, or access other repos. Branch protection rules on `time-vault-secrets` enforce append-only behavior (no deletion, no force-push). If the token is revoked/rotated, update the hardcoded value and redeploy. No user login or token input — zero friction.
+2. **GitHub token (server-side only, via GitHub Actions)** — The token is **never exposed to the client**. Instead, it's stored as a GitHub repository secret and used only by a GitHub Action (`store-vault.yml`) that acts as a secure intermediary. The Action validates the file path (must be `secrets/`), blocks overwrites (append-only), and commits the vault file. The Worker and client both trigger the Action via API — no one outside the server ever sees the token. Branch protection rules on `time-vault-secrets` still enforce append-only behavior as an extra layer. No user login or token input — zero friction.
 
 3. **Bitcoin address standard** — **P2WSH** (SegWit) for the hashlock bounty. Uses script `OP_SHA256 <SHA256(S)> OP_EQUAL` which forces the cracker to reveal S on-chain when spending. Combined with OP_RETURN in the same funding transaction for full on-chain correlation.
 
@@ -326,4 +338,12 @@ Build a static SvelteKit website deployed to **GitHub Pages** via GitHub Actions
    - **Minimum cost**: ~600 sats — 330 sats bounty (P2WSH dust limit) + ~250 sats fee + ~20 sats donation.
    - **The blockchain becomes a proof-of-crack ledger**: vault exists (V in OP_RETURN) → bounty locked (P2WSH) → vault broken (S in witness).
 
-7. **Payment UX — Worker intermediary** — The user scans a single BIP21 QR code from any Bitcoin wallet. Payment goes to a project donation address with an OP_RETURN memo (`TV-{V_hex}-{P2WSH_address}`). A stateless Worker monitors the donation address, parses the memo, and builds the funding tx (P2WSH + OP_RETURN + change) in one transaction. The Worker uses the **blockchain as its database**: deduplication is done by checking if an OP_RETURN with the vault's V already exists on-chain. No external database, no state — the Worker can crash and restart without data loss. The 1% donation is simply the amount kept by the donation address. Minimum user payment: ~600 sats.
+7. **Payment UX — Worker intermediary** — The user scans a single BIP21 QR code from any Bitcoin wallet. Payment goes to a project donation address with an OP_RETURN memo (`TV-{V_hex}-{P2WSH_address}`). A stateless Worker **triggered per-request** (not a persistent monitor) parses the memo and builds the funding tx (P2WSH + OP_RETURN + change) in one transaction. The Worker uses the **blockchain as its database**: deduplication is done by checking if an OP_RETURN with the vault's V already exists on-chain. No external database, no state — the Worker can crash and restart without data loss. The 1% donation is simply the amount kept by the donation address. Minimum user payment: ~600 sats.
+
+8. **GitHub Actions como intermediário para storage** — O token de escrita no `time-vault-secrets` **nunca** é exposto ao cliente. Em vez disso, uma GitHub Action atua como intermediário seguro:
+   - Recebe o arquivo vault via `workflow_dispatch` (chamado pelo Worker ou diretamente)
+   - **Valida** que o arquivo está na pasta `secrets/` (rejeita qualquer outro caminho)
+   - **Verifica se o arquivo já existe** — bloqueia sobrescrita (append-only)
+   - **Faz o commit** com o token protegido como secret do repositório
+   - O Worker (Bitcoin flow) e o cliente (direct flow) usam a mesma Action — lógica unificada
+   - Vantagem: o usuário externo nunca tem acesso direto ao repositório

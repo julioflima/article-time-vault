@@ -145,7 +145,6 @@
 {#snippet step1()}
   <div class="hero text-center">
     <h1 class="hero__title">Time Vault</h1>
-    <p class="hero__sub hero__title">Secrets of future</p>
     <button
       class="hero__arrow"
       onclick={() => (current = 1)}
@@ -321,7 +320,7 @@
   }
 
   .hero__sub {
-    font-family: "Bastliga One", $font-stack;
+    font-family: $font-stack;
     font-size: clamp(2rem, 5vw, 5rem);
     color: $color-black-60;
     letter-spacing: 0.08em;
