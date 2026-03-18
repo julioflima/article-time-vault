@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { base } from "$app/paths";
   import StepFlow from "$lib/components/StepFlow.svelte";
-  import YearRoulette from "$lib/components/YearRoulette.svelte";
+  import YearStepper from "$lib/components/YearStepper.svelte";
   import {
     preload,
     calcParams,
@@ -159,7 +159,7 @@
 {#snippet step2()}
   <div class="card step-card text-center">
     <h2>Time for the vault be open?</h2>
-    <YearRoulette
+    <YearStepper
       bind:value={unlockYear}
       minYear={currentYear}
       label="Unlock year"
